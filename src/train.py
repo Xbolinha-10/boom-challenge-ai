@@ -1,7 +1,10 @@
 import joblib
+import numpy as np
 import pandas as pd
 
 from lightgbm import LGBMRegressor
+from xgboost import XGBRegressor
+from catboost import CatBoostRegressor
 
 from sklearn.multioutput import MultiOutputRegressor
 from sklearn.model_selection import train_test_split
@@ -14,12 +17,10 @@ from features import add_features
 print("Lendo datasets...")
 
 train = pd.read_csv(TRAIN_PATH)
-
 labels = pd.read_csv(TRAIN_LABELS_PATH)
 
-print(train.shape)
-
-print(labels.shape)
+print("Train:", train.shape)
+print("Labels:", labels.shape)
 
 train = add_features(train)
 
@@ -27,7 +28,6 @@ if "scenario_id" in train.columns:
     train = train.drop(columns=["scenario_id"])
 
 X = train
-
 y = labels[TARGET_COLUMNS]
 
 X_train, X_valid, y_train, y_valid = train_test_split(
@@ -37,26 +37,100 @@ X_train, X_valid, y_train, y_valid = train_test_split(
     random_state=42
 )
 
-print("Treinando modelo...")
+MODELS_DIR.mkdir(exist_ok=True)
+OUTPUTS_DIR.mkdir(exist_ok=True)
 
-model = MultiOutputRegressor(
-    LGBMRegressor(
-        n_estimators=1000,
-        learning_rate=0.03,
-        num_leaves=64
+models = {
+    "lightgbm": MultiOutputRegressor(
+        LGBMRegressor(
+            n_estimators=1200,
+            learning_rate=0.025,
+            num_leaves=64,
+            random_state=42,
+            verbose=-1
+        )
+    ),
+
+    "xgboost": MultiOutputRegressor(
+        XGBRegressor(
+            n_estimators=900,
+            learning_rate=0.025,
+            max_depth=5,
+            subsample=0.9,
+            colsample_bytree=0.9,
+            objective="reg:squarederror",
+            random_state=42
+        )
+    ),
+
+    "catboost": MultiOutputRegressor(
+        CatBoostRegressor(
+            iterations=900,
+            learning_rate=0.025,
+            depth=6,
+            loss_function="RMSE",
+            verbose=False,
+            random_seed=42
+        )
     )
+}
+
+predictions = {}
+results = []
+
+for name, model in models.items():
+    print(f"\nTreinando {name}...")
+
+    model.fit(X_train, y_train)
+
+    pred = model.predict(X_valid)
+
+    mae = mean_absolute_error(y_valid, pred)
+
+    print(f"MAE {name}: {mae}")
+
+    predictions[name] = pred
+
+    joblib.dump(model, MODELS_DIR / f"{name}.pkl")
+
+    results.append({
+        "modelo": name,
+        "mae": mae
+    })
+
+
+print("\nCriando Ensemble...")
+
+ensemble_pred = (
+    0.40 * predictions["lightgbm"]
+    + 0.35 * predictions["xgboost"]
+    + 0.25 * predictions["catboost"]
 )
 
-model.fit(X_train, y_train)
+ensemble_mae = mean_absolute_error(y_valid, ensemble_pred)
 
-pred = model.predict(X_valid)
+print("MAE Ensemble:", ensemble_mae)
 
-mae = mean_absolute_error(y_valid, pred)
+results.append({
+    "modelo": "ensemble",
+    "mae": ensemble_mae
+})
 
-print("MAE:", mae)
+pd.DataFrame(results).to_csv(
+    OUTPUTS_DIR / "validation_results.csv",
+    index=False
+)
 
-MODELS_DIR.mkdir(exist_ok=True)
+metadata = {
+    "target_columns": TARGET_COLUMNS,
+    "weights": {
+        "lightgbm": 0.40,
+        "xgboost": 0.35,
+        "catboost": 0.25
+    }
+}
 
-joblib.dump(model, MODELS_DIR / "model.pkl")
+joblib.dump(metadata, MODELS_DIR / "metadata.pkl")
 
-print("Modelo salvo.")
+print("\nTreinamento finalizado.")
+print("Resultados salvos em outputs/validation_results.csv")
