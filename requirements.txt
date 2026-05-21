@@ -1,11 +1,13 @@
 numpy
 pandas
 scikit-learn
+catboost
 xgboost
 lightgbm
-catboost
 optuna
 shap
-scikit-optimize
 matplotlib
 joblib
+jupyter
+scikit-optimize
+tabulate
