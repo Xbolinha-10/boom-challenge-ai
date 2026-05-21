@@ -63,16 +63,19 @@ models = {
         )
     ),
 
-    "catboost": MultiOutputRegressor(
+        "catboost": MultiOutputRegressor(
         CatBoostRegressor(
-            iterations=900,
-            learning_rate=0.025,
-            depth=6,
+            iterations=693,
+            learning_rate=0.017661730825381874,
+            depth=5,
+            l2_leaf_reg=8.00070976705026,
+            random_strength=2.778623087933151,
             loss_function="RMSE",
             verbose=False,
             random_seed=42
         )
     )
+
 }
 
 predictions = {}
